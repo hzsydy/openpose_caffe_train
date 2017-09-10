@@ -208,16 +208,16 @@ void OPDataTransformer<Dtype>::Transform(const Datum& datum, Blob<Dtype>* transf
 
     auto* transformedDataPtr = transformedData->mutable_cpu_data();
     auto* transformedLabelPtr = transformedLabel->mutable_cpu_data();
-    CPUTimer timer;
-    timer.Start();
+    //CPUTimer timer;
+    //timer.Start();
     generateDataAndLabel(transformedDataPtr, transformedLabelPtr, datum);
-    VLOG(2) << "Transform_nv: " << timer.MicroSeconds() / 1000.0  << " ms";
+    //LOG(INFO) << "Transform_nv: " << timer.MicroSeconds() / 1000.0  << " ms";
 }
 
 template <typename Dtype>
 int OPDataTransformer<Dtype>::getNumberChannels() const
 {
-    return 2 * getNumberBodyBkgAndPAF();
+    return 2 * getNumberBodyBkgAndPAF()+2;
 }
 
 template <typename Dtype>
@@ -246,8 +246,8 @@ void OPDataTransformer<Dtype>::generateDataAndLabel(Dtype* transformedData, Dtyp
     const auto datumArea = (int)(datumHeight * datumWidth);
 
     // Time measurement
-    CPUTimer timer1;
-    timer1.Start();
+    //CPUTimer timer1;
+    //timer1.Start();
 
     // const bool hasUInt8 = data.size() > 0;
     CHECK(data.size() > 0);
@@ -256,8 +256,15 @@ void OPDataTransformer<Dtype>::generateDataAndLabel(Dtype* transformedData, Dtyp
     MetaData metaData;
     if (mPoseModel == PoseModel::DOME_18)
         readMetaData(metaData, data.c_str(), datumWidth);
-    else //if (hasUInt8)
+    else
+    {    
         readMetaData(metaData, &data[3 * datumArea], datumWidth);
+        metaData.depthEnabled = false;
+    }    
+    
+    //LOG(INFO) << "  readMetaData: " << timer1.MicroSeconds()*1e-3 << " ms";
+    //timer1.Start();
+    
     // else
     // {
     //     throw std::runtime_error{"Error" + getLine(__LINE__, __FUNCTION__, __FILE__)};
@@ -338,13 +345,22 @@ void OPDataTransformer<Dtype>::generateDataAndLabel(Dtype* transformedData, Dtyp
     }
 
     // Time measurement
-    VLOG(2) << "  rgb[:] = datum: " << timer1.MicroSeconds()*1e-3 << " ms";
-    timer1.Start();
+    //LOG(INFO) << "  rgb[:] = datum: " << timer1.MicroSeconds()*1e-3 << " ms";
+    //timer1.Start();
 
     // Depth image
     cv::Mat depth;
+
     if (depthEnabled)
-        depth = cv::imread(metaData.depthSource, CV_LOAD_IMAGE_ANYDEPTH);
+    {
+        const auto depthFullPath = param_.media_directory() + metaData.depthSource;
+        depth = cv::imread(depthFullPath, CV_LOAD_IMAGE_ANYDEPTH);
+        if (image.empty())
+            throw std::runtime_error{"Empty depth at " + depthFullPath + getLine(__LINE__, __FUNCTION__, __FILE__)};
+    }
+    
+    //LOG(INFO) << "  depth: " << timer1.MicroSeconds()*1e-3 << " ms";
+    //timer1.Start();
 
     // Clahe
     if (param_.do_clahe())
@@ -356,13 +372,10 @@ void OPDataTransformer<Dtype>::generateDataAndLabel(Dtype* transformedData, Dtyp
         cv::cvtColor(image, image, CV_BGR2GRAY);
         cv::cvtColor(image, image, CV_GRAY2BGR);
     }
-    VLOG(2) << "  color: " << timer1.MicroSeconds()*1e-3 << " ms";
-    timer1.Start();
-
-    VLOG(2) << "  ReadMeta+MetaJoints: " << timer1.MicroSeconds()*1e-3 << " ms";
+    //LOG(INFO) << "  cvtColor and CLAHE: " << timer1.MicroSeconds()*1e-3 << " ms";
+    //timer1.Start();
 
     // Data augmentation
-    timer1.Start();
     AugmentSelection augmentSelection;
     // Visualize original
     if (param_.visualize())
@@ -370,7 +383,7 @@ void OPDataTransformer<Dtype>::generateDataAndLabel(Dtype* transformedData, Dtyp
     cv::Mat imageAugmented;
     cv::Mat maskMissAugmented;
     cv::Mat depthAugmented;
-    VLOG(2) << "   input size (" << image.cols << ", " << image.rows << ")";
+    //LOG(INFO) << "   input size (" << image.cols << ", " << image.rows << ")";
     const int stride = param_.stride();
     // We only do random transform augmentSelection augmentation when training.
     if (phase_ == TRAIN)
@@ -383,29 +396,42 @@ void OPDataTransformer<Dtype>::generateDataAndLabel(Dtype* transformedData, Dtyp
         augmentSelection.scale = estimateScale(metaData);
         applyScale(imageTemp, augmentSelection.scale, image);
         applyScale(maskMissTemp, augmentSelection.scale, maskMiss);
-        applyScale(depthTemp, augmentSelection.scale, depth);
         applyScale(metaData, augmentSelection.scale);
         // Rotation
         augmentSelection.RotAndFinalSize = estimateRotation(metaData, imageTemp.size());
         applyRotation(imageTemp, augmentSelection.RotAndFinalSize, imageTemp, 0);
         applyRotation(maskMissTemp, augmentSelection.RotAndFinalSize, maskMissTemp, DEFAULT_MASK_VALUE);
-        applyRotation(depthTemp, augmentSelection.RotAndFinalSize, depthTemp, 0);
         applyRotation(metaData, augmentSelection.RotAndFinalSize.first);
         // Cropping
         augmentSelection.cropCenter = estimateCrop(metaData);
         applyCrop(imageAugmented, augmentSelection.cropCenter, imageTemp, 0);
         applyCrop(maskMissAugmented, augmentSelection.cropCenter, maskMissTemp, DEFAULT_MASK_VALUE);
-        applyCrop(depthAugmented, augmentSelection.cropCenter, depthTemp, 0);
         applyCrop(metaData, augmentSelection.cropCenter);
         // Flipping
         augmentSelection.flip = estimateFlip(metaData);
         applyFlip(imageAugmented, augmentSelection.flip, imageAugmented);
         applyFlip(maskMissAugmented, augmentSelection.flip, maskMissAugmented);
-        applyFlip(depthAugmented, augmentSelection.flip, depthAugmented);
         applyFlip(metaData, augmentSelection.flip, imageAugmented.cols);
+        
+        
         // Resize mask
         if (!maskMissTemp.empty())
+        {    
             cv::resize(maskMissAugmented, maskMissAugmented, cv::Size{}, 1./stride, 1./stride, cv::INTER_CUBIC);
+        }
+        
+        if (depthEnabled)
+        {
+            applyScale(depthTemp, augmentSelection.scale, depth);
+            applyRotation(depthTemp, augmentSelection.RotAndFinalSize, depthTemp, 0);
+            applyCrop(depthAugmented, augmentSelection.cropCenter, depthTemp, 0);
+            applyFlip(depthAugmented, augmentSelection.flip, depthAugmented);
+            
+            if (!depthTemp.empty())
+            {    
+                cv::resize(depthAugmented, depthAugmented, cv::Size{}, 1./stride, 1./stride, cv::INTER_CUBIC);
+            }
+        }
     }
     // Test
     else
@@ -417,8 +443,8 @@ void OPDataTransformer<Dtype>::generateDataAndLabel(Dtype* transformedData, Dtyp
     // Visualize final
     if (param_.visualize())
         visualize(imageAugmented, metaData, augmentSelection);
-    VLOG(2) << "  Aug: " << timer1.MicroSeconds()*1e-3 << " ms";
-    timer1.Start();
+    //LOG(INFO) << "  Aug: " << timer1.MicroSeconds()*1e-3 << " ms";
+    //timer1.Start();
 
     // Copy imageAugmented into transformedData + mean-subtraction
     const int imageAugmentedArea = imageAugmented.rows * imageAugmented.cols;
@@ -437,7 +463,11 @@ void OPDataTransformer<Dtype>::generateDataAndLabel(Dtype* transformedData, Dtyp
 
     // Generate and copy label
     generateLabelMap(transformedLabel, imageAugmented, maskMissAugmented, metaData);
-    VLOG(2) << "  AddGaussian+CreateLabel: " << timer1.MicroSeconds()*1e-3 << " ms";
+    if (depthEnabled)
+    {
+        generateLabelMap(transformedLabel, depthAugmented);
+    }
+    //LOG(INFO) << "  AddGaussian+CreateLabel: " << timer1.MicroSeconds()*1e-3 << " ms";
 
     // Visualize
     // 1. Create `visualize` folder in training folder (where train_pose.sh is located)
@@ -471,6 +501,29 @@ void OPDataTransformer<Dtype>::generateDataAndLabel(Dtype* transformedData, Dtyp
                 sprintf(imagename, "visualize/augment_%04d_label_part_%02d.jpg", metaData.writeNumber, part);
                 cv::imwrite(imagename, labelMap);
             }
+        }
+    }
+}
+    
+template<typename Dtype>
+void OPDataTransformer<Dtype>::generateLabelMap(Dtype* transformedLabel, const cv::Mat& depth) const
+{    
+    const auto gridX = (int)depth.cols;
+    const auto gridY = (int)depth.rows;
+    const auto channelOffset = gridY * gridX;
+    const auto numberBodyAndPAFParts = NUMBER_BODY_AND_PAF_CHANNELS[(int)mPoseModel];
+    // generate depth
+    for (auto gY = 0; gY < gridY; gY++)
+    {
+        const auto yOffset = gY*gridX;
+        for (auto gX = 0; gX < gridX; gX++)
+        {
+            const auto xyOffset = yOffset + gX;
+            
+            auto depth_val = depth.at<uint16_t>(gY, gX);
+            
+            transformedLabel[(2*numberBodyAndPAFParts+2)*channelOffset + xyOffset] = (depth_val>0)?1.0:0.0;
+            transformedLabel[(2*numberBodyAndPAFParts+3)*channelOffset + xyOffset] = float(depth_val)/1000.0;
         }
     }
 }
@@ -880,6 +933,19 @@ void OPDataTransformer<Dtype>::applyCrop(cv::Mat& imageAugmented, const cv::Poin
                 }
             }
         }
+        else if (imageAugmented.type() == CV_16UC1)
+        {
+            for (auto y = 0 ; y < cropY ; y++)
+            {
+                for (auto x = 0 ; x < cropX ; x++)
+                {
+                    const int xOrigin = cropCenter.x - cropX/2 + x;
+                    const int yOrigin = cropCenter.y - cropY/2 + y;
+                    if (onPlane(cv::Point{xOrigin, yOrigin}, image.size()))
+                        imageAugmented.at<uint16_t>(y,x) = image.at<uint16_t>(yOrigin, xOrigin);
+                }
+            }
+        }
         else
             throw std::runtime_error{"Not implemented for image.type() == " + std::to_string(imageAugmented.type())
                                      + getLine(__LINE__, __FUNCTION__, __FILE__)};
@@ -1139,11 +1205,12 @@ void OPDataTransformer<Dtype>::readMetaData(MetaData& metaData, const char* data
     if (mPoseModel == PoseModel::DOME_18)
     {
         // Image path
-        // const int currentLine = (9+metaData.numberOtherPeople+3*metaData.numberOtherPeople);
-        const int currentLine = (8+metaData.numberOtherPeople+3*metaData.numberOtherPeople);
+        int currentLine = 8;
+        if (metaData.numberOtherPeople!=0)
+            currentLine = 9+4*metaData.numberOtherPeople;
         metaData.imageSource = decodeString(&data[currentLine * offsetPerLine]);
         // Depth enabled
-        metaData.depthEnabled = decodeNumber<Dtype>(&data[(currentLine+1) * offsetPerLine]) == Dtype(255);
+        metaData.depthEnabled = decodeNumber<Dtype>(&data[(currentLine+1) * offsetPerLine]) != Dtype(0);
         // Depth path
         if (metaData.depthEnabled)
             metaData.depthSource = decodeString(&data[(currentLine+2) * offsetPerLine]);
