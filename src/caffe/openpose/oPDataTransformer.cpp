@@ -439,6 +439,15 @@ void OPDataTransformer<Dtype>::generateDataAndLabel(Dtype* transformedData, Dtyp
         imageAugmented = image;
         maskMissAugmented = maskMiss;
         depthAugmented = depth;
+        // Resize mask
+        if (!maskMissAugmented.empty())
+        {    
+            cv::resize(maskMissAugmented, maskMissAugmented, cv::Size{}, 1./stride, 1./stride, cv::INTER_CUBIC);
+        }
+        if (depthEnabled)
+        {
+            cv::resize(depthAugmented, depthAugmented, cv::Size{}, 1./stride, 1./stride, cv::INTER_CUBIC);
+        }
     }
     // Visualize final
     if (param_.visualize())
@@ -481,10 +490,10 @@ void OPDataTransformer<Dtype>::generateDataAndLabel(Dtype* transformedData, Dtyp
         const auto gridY = rezY / stride;
         const auto channelOffset = gridY * gridX;
         const auto numberBodyBkgPAFParts = getNumberBodyBkgAndPAF();
-        for (auto part = 0; part < 2*numberBodyBkgPAFParts; part++)
+        for (auto part = 0; part < 2*numberBodyBkgPAFParts+1; part++)
         {
             // Reduce #images saved (ideally images from 0 to numberBodyBkgPAFParts should be the same)
-            if (part < 3 || part >= numberBodyBkgPAFParts - 3)
+            if (part >= numberBodyBkgPAFParts)
             {
                 cv::Mat labelMap = cv::Mat::zeros(gridY, gridX, CV_8UC1);
                 for (auto gY = 0; gY < gridY; gY++)
@@ -498,10 +507,18 @@ void OPDataTransformer<Dtype>::generateDataAndLabel(Dtype* transformedData, Dtyp
                 cv::addWeighted(labelMap, 0.5, imageAugmented, 0.5, 0.0, labelMap);
                 // Write on disk
                 char imagename [100];
-                sprintf(imagename, "visualize/augment_%04d_label_part_%02d.jpg", metaData.writeNumber, part);
+                sprintf(imagename, "visualize/augment_%04d_label_part_%02d.png", metaData.writeNumber, part);
                 cv::imwrite(imagename, labelMap);
             }
         }
+        {
+            cv::Mat depthMap = depthAugmented.clone();
+            cv::resize(depthMap, depthMap, cv::Size{}, stride, stride, cv::INTER_LINEAR);
+            char imagename [100];
+            sprintf(imagename, "visualize/augment_%04d_label_part_%02d.png", metaData.writeNumber, 2*numberBodyBkgPAFParts+1);
+            cv::imwrite(imagename, depthMap);
+        }
+        
     }
 }
     
