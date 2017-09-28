@@ -474,7 +474,7 @@ void OPDataTransformer<Dtype>::generateDataAndLabel(Dtype* transformedData, Dtyp
     generateLabelMap(transformedLabel, imageAugmented, maskMissAugmented, metaData);
     if (depthEnabled)
     {
-        generateLabelMap(transformedLabel, depthAugmented);
+        generateLabelMap(transformedLabel, depthAugmented, metaData);
     }
     //LOG(INFO) << "  AddGaussian+CreateLabel: " << timer1.MicroSeconds()*1e-3 << " ms";
 
@@ -523,7 +523,7 @@ void OPDataTransformer<Dtype>::generateDataAndLabel(Dtype* transformedData, Dtyp
 }
     
 template<typename Dtype>
-void OPDataTransformer<Dtype>::generateLabelMap(Dtype* transformedLabel, const cv::Mat& depth) const
+void OPDataTransformer<Dtype>::generateLabelMap(Dtype* transformedLabel, const cv::Mat& depth, const MetaData& metaData) const
 {    
     const auto gridX = (int)depth.cols;
     const auto gridY = (int)depth.rows;
@@ -540,7 +540,7 @@ void OPDataTransformer<Dtype>::generateLabelMap(Dtype* transformedLabel, const c
             auto depth_val = depth.at<uint16_t>(gY, gX);
             
             transformedLabel[(2*numberBodyAndPAFParts+2)*channelOffset + xyOffset] = (depth_val>0)?1.0:0.0;
-            transformedLabel[(2*numberBodyAndPAFParts+3)*channelOffset + xyOffset] = float(depth_val)/1000.0;
+            transformedLabel[(2*numberBodyAndPAFParts+3)*channelOffset + xyOffset] = (float(depth_val)-metaData.depthCenterSelf)/1000.0;
         }
     }
 }
@@ -1226,11 +1226,31 @@ void OPDataTransformer<Dtype>::readMetaData(MetaData& metaData, const char* data
         if (metaData.numberOtherPeople!=0)
             currentLine = 9+4*metaData.numberOtherPeople;
         metaData.imageSource = decodeString(&data[currentLine * offsetPerLine]);
+        currentLine++;
         // Depth enabled
-        metaData.depthEnabled = decodeNumber<Dtype>(&data[(currentLine+1) * offsetPerLine]) != Dtype(0);
-        // Depth path
+        metaData.depthEnabled = decodeNumber<Dtype>(&data[currentLine * offsetPerLine]) != Dtype(0);
+        currentLine++;
         if (metaData.depthEnabled)
-            metaData.depthSource = decodeString(&data[(currentLine+2) * offsetPerLine]);
+        {   
+            // Depth path
+            metaData.depthSource = decodeString(&data[currentLine * offsetPerLine]);
+            currentLine++;
+            // fx, fy
+            metaData.fx = decodeNumber<Dtype>(&data[currentLine*offsetPerLine]);
+            metaData.fy = decodeNumber<Dtype>(&data[currentLine*offsetPerLine+4]);
+            currentLine++;
+            // Mask path
+            metaData.maskSource = decodeString(&data[currentLine * offsetPerLine]);
+            currentLine++;
+            // depth center self
+            metaData.depthCenterSelf = decodeNumber<Dtype>(&data[currentLine*offsetPerLine]);
+            currentLine++;
+            for (auto person = 0 ; person < metaData.numberOtherPeople ; person++)
+            {
+                metaData.depthCenterOthers.push_back(decodeNumber<Dtype>(&data[currentLine*offsetPerLine]));
+                currentLine++;
+            }
+        }    
     }
 }
 

@@ -126,6 +126,11 @@ protected:
         std::string datasetString;
         int peopleIndex;
         int annotationListIndex;
+        float fx;
+        float fy;
+        float depthCenterSelf;
+        std::string maskSource;
+        std::vector<float> depthCenterOthers; //length is numberOtherPeople
     };
 
     PoseModel mPoseModel;
@@ -136,7 +141,7 @@ protected:
     void generateDataAndLabel(Dtype* transformedData, Dtype* transformedLabel, const Datum& datum);
     void generateLabelMap(Dtype* transformedLabel, const cv::Mat& image, const cv::Mat& maskMiss,
                           const MetaData& metaData) const;
-    void generateLabelMap(Dtype* transformedLabel, const cv::Mat& depth) const;
+    void generateLabelMap(Dtype* transformedLabel, const cv::Mat& depth, const MetaData& metaData) const;
     void visualize(const cv::Mat& image, const MetaData& metaData, const AugmentSelection& augmentSelection) const;
     // Scale
     float estimateScale(const MetaData& metaData) const;
