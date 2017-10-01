@@ -540,7 +540,8 @@ void OPDataTransformer<Dtype>::generateLabelMap(Dtype* transformedLabel, const c
             auto depth_val = depth.at<uint16_t>(gY, gX);
             
             transformedLabel[(2*numberBodyAndPAFParts+2)*channelOffset + xyOffset] = (depth_val>0)?1.0:0.0;
-            transformedLabel[(2*numberBodyAndPAFParts+3)*channelOffset + xyOffset] = (float(depth_val)-metaData.depthCenterSelf)/1000.0;
+            //transformedLabel[(2*numberBodyAndPAFParts+3)*channelOffset + xyOffset] = (float(depth_val)-metaData.depthCenterSelf)/1000.0;
+            transformedLabel[(2*numberBodyAndPAFParts+3)*channelOffset + xyOffset] = metaData.depthCenterSelf/1000.0;
         }
     }
 }
