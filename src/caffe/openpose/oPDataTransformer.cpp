@@ -512,10 +512,17 @@ void OPDataTransformer<Dtype>::generateDataAndLabel(Dtype* transformedData, Dtyp
             }
         }
         {
-            cv::Mat depthMap = depthAugmented.clone();
-            cv::resize(depthMap, depthMap, cv::Size{}, stride, stride, cv::INTER_LINEAR);
+            //cv::Mat depthMap = depthAugmented.clone();
+            //cv::resize(depthMap, depthMap, cv::Size{}, stride, stride, cv::INTER_LINEAR);
+            cv::Mat labelMap = cv::Mat::zeros(gridY, gridX, CV_8UC1);
+            for (auto gY = 0; gY < gridY; gY++)
+            {
+                const auto yOffset = gY*gridX;
+                for (auto gX = 0; gX < gridX; gX++)
+                    labelMap.at<uchar>(gY,gX) = (int)(transformedLabel[(2*numberBodyAndPAFParts+3)*channelOffset + yOffset + gX]*255);
+            }
             char imagename [100];
-            sprintf(imagename, "visualize/augment_%04d_label_part_%02d.png", metaData.writeNumber, 2*numberBodyBkgPAFParts+1);
+            sprintf(imagename, "visualize/augment_%04d_label_part_%02d.png", metaData.writeNumber, 2*numberBodyBkgPAFParts+3);
             cv::imwrite(imagename, depthMap);
         }
         
